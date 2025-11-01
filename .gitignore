@@ -1,0 +1,9 @@
+.idea/
+__pycache__/
+output.wav
+output/
+temp/
+finetune/dataset/*
+!finetune/dataset/train_data.jsonl
+finetune/output/
+models/

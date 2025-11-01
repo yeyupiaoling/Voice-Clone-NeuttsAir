@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>夜雨飘零语音克隆合成</title>
+  <style>
+    :root { --bg:#ffffff; --card:#ffffff; --muted:#64748b; --primary:#0ea5e9; --accent:#16a34a; --danger:#ef4444; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background:#ffffff; color:#0f172a; }
+    .container { max-width: 1100px; margin: 32px auto; padding: 0 16px; }
+    .card { background: var(--card); border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; box-shadow: 0 4px 10px rgba(0,0,0,.04); }
+    .title { font-size: clamp(22px, 3vw, 30px); font-weight: 800; letter-spacing: .3px; margin: 0 0 6px; color:#0f172a; }
+    .subtitle { color: var(--muted); margin: 0 0 12px; font-size: clamp(13px, 1.5vw, 16px); }
+    .grid { display:grid; grid-template-columns: 1fr; gap:16px; }
+    @media (min-width: 980px) { .grid { grid-template-columns: 1.25fr 1fr; } }
+    .field { display:flex; flex-direction: column; gap:8px; }
+    label { font-weight: 600; color:#334155; }
+    input[type=text], textarea, input[type=file] { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #e5e7eb; background:#ffffff; color:#0f172a; outline:none; transition: border .15s, box-shadow .15s; }
+    input[type=text]:focus, textarea:focus, input[type=file]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(14,165,233,.15); }
+    textarea { min-height: 120px; resize: vertical; }
+    .row { display:flex; gap:12px; flex-wrap: wrap; align-items:center; }
+    .btn { cursor:pointer; border:1px solid transparent; border-radius: 10px; padding: 10px 14px; font-weight: 700; letter-spacing:.3px; transition: transform .06s ease, background-color .15s ease, border-color .15s ease, opacity .2s ease; }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background:#0ea5e9; color:#ffffff; }
+    .btn-primary:hover { background:#0284c7; }
+    .btn-secondary { background:#10b981; color:#ffffff; }
+    .btn-secondary:hover { background:#059669; }
+    .btn-danger { background:#ef4444; color:#ffffff; }
+    .btn-danger:hover { background:#dc2626; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .panel { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; }
+    .audio-card { display:flex; flex-direction: column; gap:12px; }
+    .status { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color:#334155; }
+    .footer { margin-top:14px; color:#64748b; font-size:12px; text-align:center; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #e5e7eb; font-size:12px; color:#334155; background:#f8fafc; }
+    .hidden { display:none; }
+    .tabs { display:flex; gap:8px; margin: 8px 0; }
+    .tab { padding: 6px 10px; border-radius: 999px; border:1px solid #e5e7eb; cursor:pointer; color:#334155; font-weight:600; background:#ffffff; }
+    .tab.active { border-color: var(--primary); color:#0284c7; background: #e0f2fe; }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; background: #e0f2fe; color:#0284c7; border:1px solid #bae6fd; font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="row" style="justify-content: space-between;">
+        <div>
+          <div class="title">语音克隆合成</div>
+          <div class="subtitle">上传或录音作为克隆，输入要合成的文本，即刻生成并播放</div>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top:14px;">
+        <div class="panel">
+          <div class="field">
+            <label for="text">要合成的文本</label>
+            <textarea id="text" placeholder="请输入要合成的中文文本…"></textarea>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <button id="btn" class="btn btn-primary" onclick="doInfer()">开始合成</button>
+            <button class="btn btn-secondary" onclick="fillDemo()">填充示例文本</button>
+            <span id="sampleratePill" class="pill">输出采样率 24kHz</span>
+          </div>
+          <div class="status" id="status" style="margin-top:10px;"></div>
+        </div>
+
+        <div class="panel">
+          <div class="tabs">
+            <div id="tab-upload" class="tab active" onclick="switchTab('upload')">上传 WAV/音频文件</div>
+            <div id="tab-record" class="tab" onclick="switchTab('record')">在线录音</div>
+          </div>
+
+          <div id="pane-upload">
+            <div class="field">
+              <label for="ref_audio">克隆音频（WAV格式，16~44.1kHz 单声道）</label>
+              <input id="ref_audio" type="file" accept="audio/wav,audio/*" />
+            </div>
+          </div>
+
+          <div id="pane-record" class="hidden">
+            <div class="row">
+              <button id="recToggle" class="btn btn-secondary" onclick="toggleRec()">开始录音</button>
+              <audio id="recPreview" controls class="hidden"></audio>
+            </div>
+            <div class="muted" style="margin-top:6px;">录音将转为 16kHz 单声道 WAV 用于上传</div>
+          </div>
+
+          <div class="field" style="margin-top:12px;">
+            <label for="ref_text">克隆音频对应文本</label>
+            <input id="ref_text" type="text" placeholder="请输入克隆音频里所读的文本…" />
+          </div>
+
+          <div class="audio-card" style="margin-top:12px;">
+            <audio id="audio" class="hidden" controls preload="metadata"></audio>
+            <a id="download" class="btn btn-danger hidden" download>下载音频</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let recMediaRecorder = null;
+    let recChunks = [];
+    let recordedFile = null; // File 对象（WAV）
+    let recStream = null; // MediaStream
+    let isRecording = false;
+
+    function switchTab(which) {
+      const up = document.getElementById('pane-upload');
+      const rp = document.getElementById('pane-record');
+      const tu = document.getElementById('tab-upload');
+      const tr = document.getElementById('tab-record');
+      if (which === 'upload') {
+        up.classList.remove('hidden'); rp.classList.add('hidden');
+        tu.classList.add('active'); tr.classList.remove('active');
+      } else {
+        up.classList.add('hidden'); rp.classList.remove('hidden');
+        tu.classList.remove('active'); tr.classList.add('active');
+      }
+    }
+
+    async function startRec() {
+      recordedFile = null; recChunks = [];
+      recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const options = { mimeType: 'audio/webm' };
+      recMediaRecorder = new MediaRecorder(recStream, options);
+      recMediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
+      recMediaRecorder.onstop = async () => {
+        const blob = new Blob(recChunks, { type: 'audio/webm' });
+        // 转 WAV (16kHz mono)
+        recordedFile = await webmToWavFile(blob, 16000);
+        const url = URL.createObjectURL(recordedFile);
+        const prev = document.getElementById('recPreview');
+        prev.src = url; prev.classList.remove('hidden');
+        // 释放麦克风
+        if (recStream) {
+          recStream.getTracks().forEach(t => t.stop());
+          recStream = null;
+        }
+      };
+      recMediaRecorder.start();
+      isRecording = true;
+      const btn = document.getElementById('recToggle');
+      if (btn) {
+        btn.textContent = '停止录音';
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-danger');
+      }
+    }
+
+    function stopRec() {
+      if (recMediaRecorder && recMediaRecorder.state !== 'inactive') {
+        recMediaRecorder.stop();
+      }
+      isRecording = false;
+      const btn = document.getElementById('recToggle');
+      if (btn) {
+        btn.textContent = '开始录音';
+        btn.classList.remove('btn-danger');
+        btn.classList.add('btn-secondary');
+      }
+    }
+
+    function toggleRec() {
+      if (isRecording) {
+        stopRec();
+      } else {
+        startRec();
+      }
+    }
+
+    async function webmToWavFile(webmBlob, targetSampleRate = 16000) {
+      const arrayBuffer = await webmBlob.arrayBuffer();
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+      // 重采样到 targetSampleRate，单声道
+      const offline = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * targetSampleRate), targetSampleRate);
+      const source = offline.createBufferSource();
+      // 混合为单声道
+      const monoBuffer = audioCtx.createBuffer(1, audioBuffer.length, audioBuffer.sampleRate);
+      const channelData = monoBuffer.getChannelData(0);
+      const chs = audioBuffer.numberOfChannels;
+      for (let i = 0; i < audioBuffer.length; i++) {
+        let sum = 0;
+        for (let c = 0; c < chs; c++) sum += audioBuffer.getChannelData(c)[i] || 0;
+        channelData[i] = sum / chs;
+      }
+      source.buffer = monoBuffer;
+      source.connect(offline.destination);
+      source.start(0);
+      const rendered = await offline.startRendering();
+      const wavBlob = encodeWAV(rendered.getChannelData(0), targetSampleRate);
+      return new File([wavBlob], 'record.wav', { type: 'audio/wav' });
+    }
+
+    function encodeWAV(samples, sampleRate) {
+      const bytesPerSample = 2; // PCM16
+      const blockAlign = bytesPerSample * 1; // mono
+      const byteRate = sampleRate * blockAlign;
+      const dataSize = samples.length * bytesPerSample;
+      const buffer = new ArrayBuffer(44 + dataSize);
+      const view = new DataView(buffer);
+
+      // RIFF header
+      writeString(view, 0, 'RIFF');
+      view.setUint32(4, 36 + dataSize, true);
+      writeString(view, 8, 'WAVE');
+      // fmt chunk
+      writeString(view, 12, 'fmt ');
+      view.setUint32(16, 16, true); // Subchunk1Size
+      view.setUint16(20, 1, true);  // PCM
+      view.setUint16(22, 1, true);  // Mono
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, byteRate, true);
+      view.setUint16(32, blockAlign, true);
+      view.setUint16(34, 16, true); // BitsPerSample
+      // data chunk
+      writeString(view, 36, 'data');
+      view.setUint32(40, dataSize, true);
+
+      // PCM samples
+      floatTo16BitPCM(view, 44, samples);
+
+      return new Blob([view], { type: 'audio/wav' });
+    }
+
+    function writeString(view, offset, string) {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    }
+
+    function floatTo16BitPCM(view, offset, input) {
+      for (let i = 0; i < input.length; i++, offset += 2) {
+        let s = Math.max(-1, Math.min(1, input[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+    }
+
+    async function doInfer() {
+      const text = document.getElementById('text').value.trim();
+      const refText = document.getElementById('ref_text').value.trim();
+      const uploadFile = document.getElementById('ref_audio').files[0];
+      const btn = document.getElementById('btn');
+      const status = document.getElementById('status');
+      const audio = document.getElementById('audio');
+      const link = document.getElementById('download');
+
+      if (!text) { alert('请输入要合成的文本'); return; }
+      if (!refText) { alert('请输入克隆音频对应文本'); return; }
+
+      const fd = new FormData();
+      fd.append('text', text);
+      fd.append('ref_text', refText);
+
+      // 录音优先；若无录音则使用上传
+      if (recordedFile) {
+        fd.append('ref_audio', recordedFile);
+      } else if (uploadFile) {
+        fd.append('ref_audio', uploadFile);
+      } else {
+        alert('请上传克隆音频或使用录音');
+        return;
+      }
+
+      btn.disabled = true; btn.innerText = '合成中…';
+      status.textContent = '正在发送请求…';
+      audio.classList.add('hidden');
+      link.classList.add('hidden');
+
+      try {
+        const resp = await fetch('/infer', { method: 'POST', body: fd });
+        if (!resp.ok) throw new Error('合成失败');
+        const data = await resp.json();
+        status.textContent = '合成完成';
+        audio.src = data.audio_url;
+        audio.classList.remove('hidden');
+        link.href = data.audio_url; link.classList.remove('hidden');
+        await audio.play().catch(()=>{});
+      } catch (e) {
+        console.error(e);
+        alert('请求失败：' + (e.message || '未知错误'));
+        status.textContent = '失败';
+      } finally {
+        btn.disabled = false; btn.innerText = '开始合成';
+      }
+    }
+
+    function fillDemo() {
+      document.getElementById('text').value = '今天天气不错，我们去公园散步吧。';
+    }
+  </script>
+</body>
+</html>
+
+
